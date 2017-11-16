@@ -185,6 +185,10 @@ def download_episode_list(dl_args):
         try:
             duration = arrow.get(episode.itunes_duration, ["H:mm:ss", "mm:ss", "m:ss"]) - epoch
             duration = int(duration.total_seconds())
+        except ValueError as e:
+            if "minute must be in" in str(e.args):
+                m, s = episode.itunes_duration.split(':')
+                duration = 60*int(m)+int(s)
         except TypeError:
             duration = 0
 
