@@ -183,7 +183,7 @@ def download_episode_list(dl_args):
     epoch = arrow.get("0:00", "m:ss")
     for episode in pod.items:
         try:
-            duration = arrow.get(episode.itunes_duration, ["H:mm:ss", "mm:ss", "m:ss"]) - epoch
+            duration = arrow.get(episode.itunes_duration, ["H:mm:ss", "mm:ss", "m:ss", "s"]) - epoch
             duration = int(duration.total_seconds())
         except ValueError as e:
             if "minute must be in" in str(e.args):
