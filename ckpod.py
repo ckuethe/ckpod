@@ -7,22 +7,28 @@ import logging
 import os
 import re
 import sqlite3
+
+# pyre-fixme[21]: Could not find module `urlparse`.
 import urlparse
 import warnings
 
 from multiprocessing.pool import ThreadPool
 from threading import Lock
 
+# pyre-fixme[21]: Could not find module `pyPodcastParser.Podcast`.
 from pyPodcastParser.Podcast import Podcast
 from configparser import SafeConfigParser
 import arrow
 import requests
 
+# pyre-fixme[5]: Global expression must be annotated.
 CKPOD_CONFIG = None
 DB_LOCK = Lock()
+# pyre-fixme[5]: Global expression must be annotated.
 program_args = None
 
 
+# pyre-fixme[3]: Return type must be annotated.
 def parse_args():
     global program_args
 
@@ -87,6 +93,8 @@ def parse_args():
     program_args = parser.parse_args()
 
 
+# pyre-fixme[3]: Return type must be annotated.
+# pyre-fixme[2]: Parameter must be annotated.
 def dbconnect(path=None):
     """
     Attach to the SQLite file, and set some useful properties
@@ -104,6 +112,8 @@ def dbconnect(path=None):
     return conn
 
 
+# pyre-fixme[3]: Return type must be annotated.
+# pyre-fixme[2]: Parameter must be annotated.
 def ensure_config(args):
     """
     Ensure that the config file exists and contains a config file and database
@@ -175,9 +185,10 @@ def ensure_config(args):
         with open(path_conf, "w") as out_fd:
             out_fd.write(sample)
 
+    # pyre-fixme[10]: Name `unicode` is used but not defined.
     CKPOD_CONFIG.read(unicode(path_conf))
     sections = CKPOD_CONFIG.sections()
-    if sections == [u"example"]:
+    if sections == ["example"]:
         logging.fatal("review and edit the configuration in %s", path_conf)
     logging.debug("config file sections: %s", sections)
 
@@ -189,6 +200,8 @@ def ensure_config(args):
     return CKPOD_CONFIG
 
 
+# pyre-fixme[3]: Return type must be annotated.
+# pyre-fixme[2]: Parameter must be annotated.
 def download_episode_list(dl_args):
     """
     Download the current episode list for a podcast
@@ -219,7 +232,7 @@ def download_episode_list(dl_args):
 
     try:
         pod = Podcast(resp.content)
-    except TypeError, cur_ex:
+    except TypeError as cur_ex:
         logging.warning("%s: caught exception %s", dl_args[0], cur_ex)
         return (dl_args[0], False)
 
@@ -278,6 +291,8 @@ def download_episode_list(dl_args):
     return (dl_args[0], True)
 
 
+# pyre-fixme[3]: Return type must be annotated.
+# pyre-fixme[2]: Parameter must be annotated.
 def download_episode(episode):
     """
     Download an episode
@@ -307,6 +322,7 @@ def download_episode(episode):
     params.update(episode)  # merge in job properties
 
     if CKPOD_CONFIG[podname]["sed"]:
+        # pyre-fixme[16]: Optional type has no attribute `groups`.
         sed_search, sed_replace, _ = re.match(
             r"""^s(.)(.+?)\1(.+?)\1(.+?)?$""", CKPOD_CONFIG[podname]["sed"]
         ).groups()[1:4]
@@ -366,18 +382,17 @@ def download_episode(episode):
     return episode["url"], status, resp.status_code
 
 
+# pyre-fixme[3]: Return type must be annotated.
 def probe_feed():
     global program_args
     resp = requests.get(program_args.probe)
     if resp.ok is False:
-        print "HTTP/{} - failed to probe {}".format(
-            resp.status_code, program_args.probe
-        )
+        print(f"HTTP/{resp.status_code } - failed to probe {program_args.probe}")
         exit(1)
 
     pod = Podcast(resp.content)
     if pod.is_valid_podcast is False:
-        print "Invalid feed: {}".format(program_args.probe)
+        print("Invalid feed: {program_args.probe}")
         exit(1)
 
     try:
@@ -386,20 +401,22 @@ def probe_feed():
                 episode.enclosure_url, timeout=program_args.timeout, stream=True
             )
             if program_args.sed:
+                # pyre-fixme[16]: Optional type has no attribute `groups`.
                 sed_search, sed_replace, _ = re.match(
                     r"""^s(.)(.+?)\1(.+?)\1(.+?)?$""", program_args.sed
                 ).groups()[1:4]
                 new_name = re.sub(sed_search, sed_replace, episode.enclosure_url)
-                print new_name
+                print(new_name)
             if resp.ok:
-                print episode.enclosure_url
-                print resp.url
+                print(episode.enclosure_url)
+                print(resp.url)
                 resp.close()
-            print ""
+            print("")
     except KeyboardInterrupt:
         return
 
 
+# pyre-fixme[3]: Return type must be annotated.
 def main():
     global CKPOD_CONFIG
     global DB_LOCK
@@ -433,7 +450,11 @@ def main():
 
     workers = ThreadPool(program_args.downloads)
     logging.info(
-        "Refreshing %d feeds with %d threads", len(feed_urls), program_args.downloads
+        "Refreshing %d feeds with %d threads",
+        # pyre-fixme[6]: Expected `Sized` for 1st param but got
+        #  `Iterator[typing.Tuple[typing.Any, typing.Any]]`.
+        len(feed_urls),
+        program_args.downloads,
     )
     workers.map(download_episode_list, feed_urls, chunksize=1)
 
@@ -444,11 +465,17 @@ def main():
             jobs = map(dict, dbh.execute(query).fetchall())
 
     if program_args.refresh:
+        # pyre-fixme[6]: Expected `Sized` for 1st param but got
+        #  `Iterator[typing.Dict[typing.Any, typing.Any]]`.
         logging.info("Found %d new episodes", len(jobs))
         return
 
     logging.info(
-        "Downloading %d episodes with %d threads", len(jobs), program_args.downloads
+        "Downloading %d episodes with %d threads",
+        # pyre-fixme[6]: Expected `Sized` for 1st param but got
+        #  `Iterator[typing.Dict[typing.Any, typing.Any]]`.
+        len(jobs),
+        program_args.downloads,
     )
     workers.map(download_episode, jobs, chunksize=1)
 
