@@ -29,6 +29,7 @@ sed = s@^(.*/)((.+?)(-[0-9]{16,})?-.{20}(.{12})?)[.]@\3.@
 ```
 
 Or 
+
 ```
 [war_college]
 url = https://rss.acast.com/warcollege
@@ -38,3 +39,9 @@ url = https://rss.acast.com/warcollege
 # howthemilitaryis-quietly-defyingtrumpbybattlingclimatechange.mp3
 sed = s,^.+/([^/]+)/media([.]\w+)$,\1\2,
 ```
+
+### To-Do
+
+* handle redirects. Some pods redirect through a couple of GUIDs until finally ending up at a sane filename. possibly `HEAD` the media url during RSS loading to probe the final filename? maybe add a new keyword? `requests.get` will do that and the `requests.Response.url` will contain the final resolved URL. Unfortunately some of those URLs are a mess, which is why we have sed.
+* add some special formats for composing disk filenames, eg. date, episode title, ...
+* fetch-only mode. don't waste time reloading the feeds, just download missing episodes

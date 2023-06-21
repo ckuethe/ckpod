@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import sqlite3
+from typing import cast, Any, Dict, Optional, Tuple, Union, NoReturn
 
 # pyre-fixme[21]: Could not find module `urlparse`.
 import urlparse
@@ -21,17 +22,12 @@ from configparser import SafeConfigParser
 import arrow
 import requests
 
-# pyre-fixme[5]: Global expression must be annotated.
-CKPOD_CONFIG = None
-DB_LOCK = Lock()
-# pyre-fixme[5]: Global expression must be annotated.
-program_args = None
+CKPOD_CONFIG: SafeConfigParser = cast(SafeConfigParser, None)
+DB_LOCK: Lock = Lock()
+program_args: argparse.Namespace = cast(argparse.Namespace, None)
 
 
-# pyre-fixme[3]: Return type must be annotated.
-def parse_args():
-    global program_args
-
+def parse_args() -> argparse.Namespace:
     descr = "Another (hopefully less terrible) podcast downloader"
     parser = argparse.ArgumentParser(
         description=descr, formatter_class=argparse.ArgumentDefaultsHelpFormatter
@@ -90,12 +86,10 @@ def parse_args():
         action="count",
         help="increase verbosity",
     )
-    program_args = parser.parse_args()
+    return parser.parse_args()
 
 
-# pyre-fixme[3]: Return type must be annotated.
-# pyre-fixme[2]: Parameter must be annotated.
-def dbconnect(path=None):
+def dbconnect(path: Optional[str] = None) -> sqlite3.Connection:
     """
     Attach to the SQLite file, and set some useful properties
 
@@ -112,9 +106,7 @@ def dbconnect(path=None):
     return conn
 
 
-# pyre-fixme[3]: Return type must be annotated.
-# pyre-fixme[2]: Parameter must be annotated.
-def ensure_config(args):
+def ensure_config(args: argparse.Namespace) -> SafeConfigParser:
     """
     Ensure that the config file exists and contains a config file and database
 
@@ -185,8 +177,7 @@ def ensure_config(args):
         with open(path_conf, "w") as out_fd:
             out_fd.write(sample)
 
-    # pyre-fixme[10]: Name `unicode` is used but not defined.
-    CKPOD_CONFIG.read(unicode(path_conf))
+    CKPOD_CONFIG.read(path_conf)
     sections = CKPOD_CONFIG.sections()
     if sections == ["example"]:
         logging.fatal("review and edit the configuration in %s", path_conf)
@@ -200,9 +191,8 @@ def ensure_config(args):
     return CKPOD_CONFIG
 
 
-# pyre-fixme[3]: Return type must be annotated.
 # pyre-fixme[2]: Parameter must be annotated.
-def download_episode_list(dl_args):
+def download_episode_list(dl_args) -> Tuple[str, bool]:
     """
     Download the current episode list for a podcast
 
@@ -216,6 +206,7 @@ def download_episode_list(dl_args):
 
     if not CKPOD_CONFIG.getboolean(dl_args[0], "enabled"):
         logging.debug("%s: feed not enabled", dl_args[0])
+        # pyre-fixme[7]: Expected `Tuple[str, bool]` but got `Tuple[typing.Any, str]`.
         return (dl_args[0], "skip")
 
     try:
@@ -291,9 +282,8 @@ def download_episode_list(dl_args):
     return (dl_args[0], True)
 
 
-# pyre-fixme[3]: Return type must be annotated.
-# pyre-fixme[2]: Parameter must be annotated.
-def download_episode(episode):
+# pyre-fixme[2]: Parameter annotation cannot contain `Any`.
+def download_episode(episode: Dict[Any,Any]) -> Tuple[str, bool, int]:
     """
     Download an episode
 
@@ -306,6 +296,8 @@ def download_episode(episode):
 
     podname = episode["podname"]
     if not CKPOD_CONFIG.getboolean(podname, "enabled"):
+        # pyre-fixme[7]: Expected `Tuple[str, bool, int]` but got `Tuple[typing.Any,
+        #  str]`.
         return episode["url"], "skip_feed"
 
     if "?" in episode["url"]:
@@ -335,6 +327,8 @@ def download_episode(episode):
     logging.debug("%s -> %s", params["podname"], disk_file_name)
 
     if CKPOD_CONFIG.getboolean(podname, "dry_run"):
+        # pyre-fixme[7]: Expected `Tuple[str, bool, int]` but got `Tuple[typing.Any,
+        #  str]`.
         return episode["url"], "dry_run"
 
     if not os.path.exists(CKPOD_CONFIG[podname]["destdir"]):
@@ -352,6 +346,8 @@ def download_episode(episode):
                 with dbh:
                     query = "UPDATE history SET downloaded=1 WHERE podname=? AND url=?"
                     dbh.execute(query, (podname, episode["url"]))
+            # pyre-fixme[7]: Expected `Tuple[str, bool, int]` but got
+            #  `Tuple[typing.Any, bool]`.
             return episode["url"], True
     else:
         file_size = 0
@@ -363,6 +359,8 @@ def download_episode(episode):
             episode["url"], stream=True, headers=resume_header, timeout=10
         )
     except requests.ReadTimeout:
+        # pyre-fixme[7]: Expected `Tuple[str, bool, int]` but got `Tuple[typing.Any,
+        #  bool]`.
         return episode["url"], False
 
     status = False
@@ -382,47 +380,45 @@ def download_episode(episode):
     return episode["url"], status, resp.status_code
 
 
-# pyre-fixme[3]: Return type must be annotated.
-def probe_feed():
-    global program_args
-    resp = requests.get(program_args.probe)
+def probe_feed(args:argparse.Namespace) -> Union[None, NoReturn]:
+    resp = requests.get(args.probe)
     if resp.ok is False:
-        print(f"HTTP/{resp.status_code } - failed to probe {program_args.probe}")
+        logging.critical(
+            f"HTTP/{resp.status_code } - failed to probe {args.probe}"
+        )
         exit(1)
 
     pod = Podcast(resp.content)
     if pod.is_valid_podcast is False:
-        print("Invalid feed: {program_args.probe}")
+        logging.critical(f"Invalid feed: {args.probe}")
         exit(1)
 
     try:
         for episode in pod.items:
             resp = requests.get(
-                episode.enclosure_url, timeout=program_args.timeout, stream=True
+                episode.enclosure_url, timeout=args.timeout, stream=True
             )
-            if program_args.sed:
+            if args.sed:
                 # pyre-fixme[16]: Optional type has no attribute `groups`.
                 sed_search, sed_replace, _ = re.match(
-                    r"""^s(.)(.+?)\1(.+?)\1(.+?)?$""", program_args.sed
+                    r"""^s(.)(.+?)\1(.+?)\1(.+?)?$""", args.sed
                 ).groups()[1:4]
                 new_name = re.sub(sed_search, sed_replace, episode.enclosure_url)
-                print(new_name)
+                logging.info(new_name)
             if resp.ok:
-                print(episode.enclosure_url)
-                print(resp.url)
+                logging.info(episode.enclosure_url)
+                logging.info(resp.url)
                 resp.close()
-            print("")
     except KeyboardInterrupt:
         return
 
 
-# pyre-fixme[3]: Return type must be annotated.
-def main():
+def main() -> None:
     global CKPOD_CONFIG
     global DB_LOCK
     global program_args
 
-    parse_args()  # modifies program_args
+    program_args = parse_args()
     logfmt = "%(levelname)s: %(message)s"
     loglevel = logging.WARN
     if program_args.verbose:
@@ -435,26 +431,22 @@ def main():
     CKPOD_CONFIG = ensure_config(program_args)
 
     if program_args.probe:
-        probe_feed()
+        probe_feed(program_args)
         exit(0)
 
     dbh = dbconnect()
 
-    feeds = filter(
-        lambda section_name: section_name not in ["example", "DEFAULT"],
-        CKPOD_CONFIG.sections(),
+    feeds = list(
+        filter(
+            lambda section_name: section_name not in ["example", "DEFAULT"],
+            CKPOD_CONFIG.sections(),
+        )
     )
-    feed_urls = map(
-        lambda feed_name: (feed_name, CKPOD_CONFIG[feed_name]["url"]), feeds
-    )
+    feed_urls = [(feed_name, CKPOD_CONFIG[feed_name]["url"]) for feed_name in feeds]
 
     workers = ThreadPool(program_args.downloads)
     logging.info(
-        "Refreshing %d feeds with %d threads",
-        # pyre-fixme[6]: Expected `Sized` for 1st param but got
-        #  `Iterator[typing.Tuple[typing.Any, typing.Any]]`.
-        len(feed_urls),
-        program_args.downloads,
+        "Refreshing {len(feed_urls)} feeds with {program_args.downloads} threads"
     )
     workers.map(download_episode_list, feed_urls, chunksize=1)
 
@@ -462,20 +454,14 @@ def main():
     with DB_LOCK:
         with dbh:
             query = "SELECT * FROM history WHERE downloaded=0 ORDER BY pub_time DESC"
-            jobs = map(dict, dbh.execute(query).fetchall())
+            jobs = [dict(x) for x in dbh.execute(query).fetchall()]
 
     if program_args.refresh:
-        # pyre-fixme[6]: Expected `Sized` for 1st param but got
-        #  `Iterator[typing.Dict[typing.Any, typing.Any]]`.
-        logging.info("Found %d new episodes", len(jobs))
+        logging.info(f"Found {len(jobs)} new episodes")
         return
 
     logging.info(
-        "Downloading %d episodes with %d threads",
-        # pyre-fixme[6]: Expected `Sized` for 1st param but got
-        #  `Iterator[typing.Dict[typing.Any, typing.Any]]`.
-        len(jobs),
-        program_args.downloads,
+        f"Downloading {len(jobs)} episodes with {program_args.downloads} threads"
     )
     workers.map(download_episode, jobs, chunksize=1)
 
